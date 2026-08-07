@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Disposable, IDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
-import { ResourceMap } from '../../../../base/common/map.js';
+import { LRUCache } from '../../../../base/common/map.js';
 import { derived, IObservable, observableValue } from '../../../../base/common/observable.js';
 import { URI } from '../../../../base/common/uri.js';
 import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
@@ -70,6 +70,8 @@ export interface IChatSideChatProvider {
 
 export const IChatSideChatService = createDecorator<IChatSideChatService>('chatSideChatService');
 
+const SIDE_CHAT_ORIGIN_CACHE_LIMIT = 50;
+
 export interface IChatSideChatService {
 	readonly _serviceBrand: undefined;
 
@@ -93,8 +95,8 @@ export class ChatSideChatService extends Disposable implements IChatSideChatServ
 	declare readonly _serviceBrand: undefined;
 
 	private readonly _providers = observableValue<readonly IChatSideChatProvider[]>(this, []);
-	// Cheap deriveds keyed by session resource keep observable identities stable across renders.
-	private readonly _sideChatOrigins = new ResourceMap<IObservable<IChatSideChatOrigin | undefined>>();
+	// Cheap deriveds only preserve identity across renders, so cold entries can be rebuilt.
+	private readonly _sideChatOrigins = new LRUCache<string, IObservable<IChatSideChatOrigin | undefined>>(SIDE_CHAT_ORIGIN_CACHE_LIMIT);
 
 	registerProvider(provider: IChatSideChatProvider): IDisposable {
 		if (!this._providers.get().includes(provider)) {
@@ -123,7 +125,8 @@ export class ChatSideChatService extends Disposable implements IChatSideChatServ
 	}
 
 	observeSideChatOrigin(sessionResource: URI): IObservable<IChatSideChatOrigin | undefined> {
-		let origin = this._sideChatOrigins.get(sessionResource);
+		const resourceKey = sessionResource.toString();
+		let origin = this._sideChatOrigins.get(resourceKey);
 		if (!origin) {
 			origin = derived(this, reader => {
 				for (const provider of this._providers.read(reader)) {
@@ -134,7 +137,7 @@ export class ChatSideChatService extends Disposable implements IChatSideChatServ
 				}
 				return undefined;
 			});
-			this._sideChatOrigins.set(sessionResource, origin);
+			this._sideChatOrigins.set(resourceKey, origin);
 		}
 		return origin;
 	}

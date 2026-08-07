@@ -232,13 +232,14 @@ suite('SessionsSideChatProviderContribution', () => {
 					callOrder.push(`reveal:${item.id}`);
 					revealed.push(item);
 				},
+				focus: item => { callOrder.push(`focus:${item.id}`); },
 			}),
 		});
 
 		await provider()!.revealSideChatSource(sideChat.resource);
 
 		assert.deepStrictEqual({ callOrder, revealed }, {
-			callOrder: [`open:${sourceChat.resource.toString()}`, 'reveal:turn-1'],
+			callOrder: [`open:${sourceChat.resource.toString()}`, 'reveal:turn-1', 'focus:turn-1'],
 			revealed: [request],
 		});
 	});
@@ -260,6 +261,7 @@ suite('SessionsSideChatProviderContribution', () => {
 				callOrder.push(`reveal:${item.id}`);
 				revealed.push(item);
 			},
+			focus: item => { callOrder.push(`focus:${item.id}`); },
 		});
 		const { provider, callOrder } = setup({
 			chat,
@@ -275,7 +277,7 @@ suite('SessionsSideChatProviderContribution', () => {
 		await provider()!.revealSideChatSource(sideChat.resource);
 
 		assert.deepStrictEqual({ callOrder, revealed }, {
-			callOrder: [`open:${sourceChat.resource.toString()}`, 'reveal:turn-1'],
+			callOrder: [`open:${sourceChat.resource.toString()}`, 'reveal:turn-1', 'focus:turn-1'],
 			revealed: [request],
 		});
 	});

@@ -164,6 +164,13 @@ export interface IChatListItemTemplate {
 	 */
 	readonly responseTokenStatsHover: MutableDisposable<IManagedHover>;
 
+	/**
+	 * Side chat origin card rendered above the first request. Template-scoped so
+	 * re-rendering the same element replaces the previous card rather than
+	 * leaving its observers alive until the row is recycled.
+	 */
+	readonly sideChatOriginPart: MutableDisposable<ChatSideChatOriginPart>;
+
 	/** Drag handle element for reordering pending requests, if currently rendered. */
 	dragHandle?: HTMLElement;
 
@@ -981,6 +988,7 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		const elementDisposables = templateDisposables.add(new DisposableStore());
 		const completedResponseDisclosureDisposables = templateDisposables.add(new DisposableStore());
 		const responseTokenStatsHover = templateDisposables.add(new MutableDisposable<IManagedHover>());
+		const sideChatOriginPart = templateDisposables.add(new MutableDisposable<ChatSideChatOriginPart>());
 
 		const footerToolbarContainer = dom.append(rowContainer, $('.chat-footer-toolbar'));
 		if (this.rendererOptions.noFooter) {
@@ -1053,7 +1061,7 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		}));
 		const connectionObserver = document.createElement('connection-observer') as dom.ConnectionObserverElement;
 		dom.append(container, connectionObserver);
-		const template: IChatListItemTemplate = { header, avatarContainer, requestHover, username, detail, value, requestTimestampContainer, rowContainer, elementDisposables, templateDisposables, contextKeyService, instantiationService: scopedInstantiationService, agentHover, titleToolbar, footerToolbar, footerToolbarContainer, footerDetailsContainer, disabledOverlay, checkpointToolbar, checkpointRestoreToolbar, checkpointContainer, checkpointRestoreContainer, completedResponseDisclosureDisposables, responseTokenStatsHover };
+		const template: IChatListItemTemplate = { header, avatarContainer, requestHover, username, detail, value, requestTimestampContainer, rowContainer, elementDisposables, templateDisposables, contextKeyService, instantiationService: scopedInstantiationService, agentHover, titleToolbar, footerToolbar, footerToolbarContainer, footerDetailsContainer, disabledOverlay, checkpointToolbar, checkpointRestoreToolbar, checkpointContainer, checkpointRestoreContainer, completedResponseDisclosureDisposables, responseTokenStatsHover, sideChatOriginPart };
 		this.templateDataByRow.set(rowContainer, template);
 
 		templateDisposables.add(this._onDidUpdateViewModel.event(() => {
@@ -1988,8 +1996,10 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		dom.clearNode(templateData.value);
 		if (this.environmentService.isSessionsWindow && this.viewModel?.model.getRequests()[0]?.id === element.id) {
 			const sideChatOriginPart = this.instantiationService.createInstance(ChatSideChatOriginPart, element.sessionResource);
+			templateData.sideChatOriginPart.value = sideChatOriginPart;
 			templateData.value.appendChild(sideChatOriginPart.domNode);
-			templateData.elementDisposables.add(sideChatOriginPart);
+		} else {
+			templateData.sideChatOriginPart.clear();
 		}
 		const parts: IChatContentPart[] = [];
 		const explicitImageAttachmentsPart = explicitImageVariables.length ? this.renderAttachments(explicitImageVariables, element.contentReferences, element.modelId, templateData, element.resolvedModelId) : undefined;
@@ -4286,6 +4296,9 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		// released here; a virtualized row would otherwise keep showing (and
 		// retaining) the previous element's token breakdown.
 		templateData.responseTokenStatsHover.clear();
+		// Template-scoped like the hover above: release the origin card so a
+		// virtualized row does not keep observing the previous element's chat.
+		templateData.sideChatOriginPart.clear();
 	}
 
 	private renderMcpServersInteractionRequired(content: IChatMcpServersStarting | IChatMcpServersStartingSerialized, context: IChatContentPartRenderContext, templateData: IChatListItemTemplate): IChatContentPart {

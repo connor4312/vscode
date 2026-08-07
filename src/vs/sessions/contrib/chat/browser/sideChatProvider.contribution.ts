@@ -6,7 +6,7 @@
 import { raceTimeout } from '../../../../base/common/async.js';
 import { Event } from '../../../../base/common/event.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
-import { ResourceMap } from '../../../../base/common/map.js';
+import { LRUCache } from '../../../../base/common/map.js';
 import { derived, IObservable, IReader } from '../../../../base/common/observable.js';
 import { URI } from '../../../../base/common/uri.js';
 import { IUriIdentityService } from '../../../../platform/uriIdentity/common/uriIdentity.js';
@@ -22,6 +22,7 @@ import { ISessionsManagementService } from '../../../services/sessions/common/se
 import { createAndSendSideChat } from './sideChatOrchestration.js';
 
 const SIDE_CHAT_SOURCE_REVEAL_TIMEOUT = 2_000;
+const SIDE_CHAT_ORIGIN_CACHE_LIMIT = 50;
 
 /**
  * Backs the workbench's "Ask in Side Chat" affordance with the Agents window's
@@ -33,8 +34,8 @@ export class SessionsSideChatProviderContribution extends Disposable implements 
 
 	static readonly ID = 'sessions.contrib.sideChatProvider';
 
-	// Cached observables avoid recreating deriveds for every rendered chat row.
-	private readonly _sideChatOrigins = new ResourceMap<IObservable<IChatSideChatOrigin | undefined>>();
+	// Cheap deriveds only preserve identity across renders, so cold entries can be rebuilt.
+	private readonly _sideChatOrigins = new LRUCache<string, IObservable<IChatSideChatOrigin | undefined>>(SIDE_CHAT_ORIGIN_CACHE_LIMIT);
 	private readonly _isSessionsWindow: boolean;
 
 	constructor(
@@ -71,7 +72,8 @@ export class SessionsSideChatProviderContribution extends Disposable implements 
 
 	/** Observes the source metadata for a side chat. */
 	observeSideChatOrigin(sessionResource: URI): IObservable<IChatSideChatOrigin | undefined> {
-		let sideChatOrigin = this._sideChatOrigins.get(sessionResource);
+		const resourceKey = sessionResource.toString();
+		let sideChatOrigin = this._sideChatOrigins.get(resourceKey);
 		if (!sideChatOrigin) {
 			sideChatOrigin = derived(this, reader => {
 				if (!this._isSessionsWindow) {
@@ -92,7 +94,7 @@ export class SessionsSideChatProviderContribution extends Disposable implements 
 					selection: origin.selection ? { text: origin.selection.text } : undefined,
 				};
 			});
-			this._sideChatOrigins.set(sessionResource, sideChatOrigin);
+			this._sideChatOrigins.set(resourceKey, sideChatOrigin);
 		}
 		return sideChatOrigin;
 	}
@@ -136,6 +138,9 @@ export class SessionsSideChatProviderContribution extends Disposable implements 
 		const item = widget.viewModel?.getItems().find(item => item.id === origin.sourceTurnId);
 		if (item && isRequestVM(item)) {
 			widget.reveal(item);
+			// Activating the card destroys the focused element when the source
+			// chat replaces it, so land focus on the revealed request.
+			widget.focus(item);
 		}
 	}
 

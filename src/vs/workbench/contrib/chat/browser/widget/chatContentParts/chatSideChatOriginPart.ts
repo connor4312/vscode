@@ -8,6 +8,7 @@ import * as dom from '../../../../../../base/browser/dom.js';
 import { StandardKeyboardEvent } from '../../../../../../base/browser/keyboardEvent.js';
 import { Gesture, EventType as TouchEventType } from '../../../../../../base/browser/touch.js';
 import { getDefaultHoverDelegate } from '../../../../../../base/browser/ui/hover/hoverDelegateFactory.js';
+import type { IManagedHover } from '../../../../../../base/browser/ui/hover/hover.js';
 import { CancellationTokenSource } from '../../../../../../base/common/cancellation.js';
 import { Codicon } from '../../../../../../base/common/codicons.js';
 import { onUnexpectedError } from '../../../../../../base/common/errors.js';
@@ -23,6 +24,8 @@ import { IChatService } from '../../../common/chatService/chatService.js';
 import { IChatSideChatOrigin, IChatSideChatService } from '../../../common/chatSideChatService.js';
 import { IChatModel } from '../../../common/model/chatModel.js';
 
+const ARIA_LABEL_QUOTE_MAX_LENGTH = 120;
+
 /**
  * Shows the conversation and prompt a side chat branched from.
  */
@@ -31,6 +34,7 @@ export class ChatSideChatOriginPart extends Disposable {
 	readonly domNode: HTMLElement;
 
 	private readonly _disposeCts = new CancellationTokenSource();
+	private readonly _originHover: IManagedHover;
 	private _renderVersion = 0;
 
 	constructor(
@@ -46,7 +50,7 @@ export class ChatSideChatOriginPart extends Disposable {
 		this.domNode.tabIndex = 0;
 		this.domNode.setAttribute('role', 'button');
 		this._register(Gesture.addTarget(this.domNode));
-		this._register(hoverService.setupManagedHover(
+		this._originHover = this._register(hoverService.setupManagedHover(
 			getDefaultHoverDelegate('element'),
 			this.domNode,
 			localize('chat.sideChatOrigin.showOriginalMessage', "Show the original message"),
@@ -79,9 +83,15 @@ export class ChatSideChatOriginPart extends Disposable {
 			dom.clearNode(this.domNode);
 			this.domNode.classList.add('hidden');
 			this.domNode.removeAttribute('aria-label');
+			this._originHover.update(localize('chat.sideChatOrigin.showOriginalMessage', "Show the original message"));
 			return;
 		}
 		const title = origin.sourceTitle ?? localize('chat.sideChatOrigin.originalConversation', "Original conversation");
+		this._originHover.update(localize(
+			'chat.sideChatOrigin.showOriginalMessageInConversation',
+			"Show the original message in {0}",
+			title,
+		));
 		let quote: string | undefined;
 		let shouldLoadSourceSession = false;
 		if (origin.selection) {
@@ -141,6 +151,16 @@ export class ChatSideChatOriginPart extends Disposable {
 		return quote || undefined;
 	}
 
+	private _truncateQuoteForAriaLabel(quote: string): string {
+		if (quote.length <= ARIA_LABEL_QUOTE_MAX_LENGTH) {
+			return quote;
+		}
+
+		const truncatedQuote = quote.slice(0, ARIA_LABEL_QUOTE_MAX_LENGTH - 1);
+		const wordBoundary = truncatedQuote.lastIndexOf(' ');
+		return `${wordBoundary > 0 ? truncatedQuote.slice(0, wordBoundary) : truncatedQuote}…`;
+	}
+
 	private _renderContent(title: string, quote: string | undefined): void {
 		dom.clearNode(this.domNode);
 		this.domNode.classList.remove('hidden');
@@ -163,7 +183,7 @@ export class ChatSideChatOriginPart extends Disposable {
 				'chat.sideChatOrigin.ariaLabel',
 				"Side chat about {0}: {1}. Select to show the original message.",
 				title,
-				quote,
+				this._truncateQuoteForAriaLabel(quote),
 			));
 		} else {
 			this.domNode.setAttribute('aria-label', localize(
